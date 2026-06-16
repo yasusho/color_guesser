@@ -267,8 +267,20 @@ const switchMode = (newMode) => {
 };
 
 // --- シェアURL生成 ---
-const encodeShareData = data => btoa(unescape(encodeURIComponent(JSON.stringify(data))));
-const decodeShareData = enc => JSON.parse(decodeURIComponent(escape(atob(enc))));
+// URL-safe Base64（+→- /→_ =除去）で環境差異を吸収
+const encodeShareData = data =>
+    btoa(JSON.stringify(data))
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=/g, '');
+
+const decodeShareData = enc => {
+    // URL-safe → 標準Base64に戻してからデコード
+    const b64 = enc.replace(/-/g, '+').replace(/_/g, '/');
+    const pad = b64.length % 4;
+    return JSON.parse(atob(pad ? b64 + '='.repeat(4 - pad) : b64));
+};
+
 const getBaseUrl = () => location.href.replace(/#.*$/, '');
 
 const getFreeShareUrl = () => {
