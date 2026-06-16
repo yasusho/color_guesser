@@ -132,6 +132,7 @@ const updateModelLayout = () => {
     }
 
     state.currentModelId = el.modelSelect.value;
+    localStorage.setItem('color_guesser_model', el.modelSelect.value);
     setupAdjustButtons();
     updateUIFromGuess();
 };
@@ -217,7 +218,16 @@ const submitGuess = () => {
     if (state.mode === 'challenge') {
         state.totalScore += score;
         const guessRgb = model.toRgb(...state.guessParams).map(Math.round);
-        state.history.push({ round: state.round, score, distance, time: state.currentTime, targetColorCSS: `rgb(${state.targetRgb.join(' ')})`, guessColorCSS: `rgb(${guessRgb.join(',')})` });
+        state.history.push({
+            round: state.round,
+            score,
+            distance,
+            time: state.currentTime,
+            targetColorCSS: `rgb(${state.targetRgb.join(' ')})`,
+            guessColorCSS: `rgb(${guessRgb.join(',')})`,
+            model: el.modelSelect.options[el.modelSelect.selectedIndex].text,
+            grad: state.showGradients
+        });
         el.challengeTotalScore.textContent = `SCORE: ${state.totalScore}`;
         el.nextText.textContent = state.round < 5 ? "次のラウンドへ" : "結果発表";
         if (el.freeShareContainer) el.freeShareContainer.classList.add('hidden');
@@ -236,14 +246,17 @@ const handleNext = () => {
         el.summaryFeedback.textContent = state.totalScore >= 450 ? "素晴らしい結果です！" : state.totalScore >= 350 ? "良い目を持っていますね！" : "あと少し！練習あるのみ！";
         if (el.summaryTotalTime) el.summaryTotalTime.textContent = totalTimeSec + 's';
         el.summaryHistory.innerHTML = state.history.map(item => `
-            <div class="flex items-center justify-between p-2.5">
-                <span class="font-bold w-8 text-slate-400">R${item.round}</span>
+            <div class="flex items-center justify-between p-2.5 border-b border-slate-50 last:border-0">
+                <span class="font-bold w-8 text-slate-400 text-xs">R${item.round}</span>
                 <div class="flex gap-1.5 flex-1 px-2">
                     <div class="w-5 h-5 rounded-sm" style="background:${item.targetColorCSS}"></div>
                     <div class="w-5 h-5 rounded-sm" style="background:${item.guessColorCSS}"></div>
                 </div>
-                <span class="font-mono text-slate-400 text-xs">${(item.time / 1000).toFixed(1)}s</span>
-                <span class="font-mono text-slate-800 text-base ml-3">${item.score}</span>
+                <div class="flex flex-col items-end">
+                    <span class="text-[9px] font-bold text-slate-400 tracking-wider">${item.model} · ${item.grad ? 'ガイド有' : 'ガイド無'}</span>
+                    <span class="font-mono text-slate-400 text-[11px]">${(item.time / 1000).toFixed(1)}s</span>
+                </div>
+                <span class="font-mono text-slate-800 text-base font-bold ml-3 w-8 text-right">${item.score}</span>
             </div>
         `).join('');
         el.modalSummary.classList.remove('hidden');
@@ -289,6 +302,7 @@ const getFreeShareUrl = () => {
     const data = {
         v: 1, mode: 'free',
         model: el.modelSelect.value,
+        grad: state.showGradients,
         tRgb: state.targetRgb,
         gRgb: guessRgb,
         score: state.currentScore,
@@ -308,7 +322,9 @@ const getChallengeShareUrl = () => {
             tRgb: h.targetColorCSS.replace(/rgb\(|\)/g, '').split(/[\s,]+/).map(Number),
             gCss: h.guessColorCSS,
             s: h.score,
-            t: h.time
+            t: h.time,
+            m: h.model,
+            g: h.grad
         }))
     };
     return `${getBaseUrl()}#r=${encodeShareData(data)}`;
@@ -320,13 +336,14 @@ const getShareText = () => {
     const totalTimeSec = (totalTimeMs / 1000).toFixed(1);
     const url = getChallengeShareUrl();
     return `🎨 Color Guesser チャレンジ結果 🎨\nスコア: ${state.totalScore} / 500  ⏱ ${totalTimeSec}s\n\n` +
-        state.history.map(i => `Round ${i.round}: ${i.score}点  ${(i.time / 1000).toFixed(1)}s`).join('\n') +
+        state.history.map(i => `Round ${i.round}: ${i.score}点  ${(i.time / 1000).toFixed(1)}s (${i.model}・${i.grad ? 'ガイド有' : 'ガイド無'})`).join('\n') +
         `\n\n${url}\n#ColorGuesser`;
 };
 
 const getFreeShareText = () => {
     const url = getFreeShareUrl();
-    return `🎨 Color Guesser フリープレイ 🎨\nモデル: ${el.modelSelect.options[el.modelSelect.selectedIndex].text}\n評価: ${state.currentEvaluation} (スコア: ${state.currentScore}点 / ${(state.currentTime / 1000).toFixed(1)}s)\n\n${url}\n#ColorGuesser`;
+    const gradText = state.showGradients ? 'あり' : 'なし';
+    return `🎨 Color Guesser フリープレイ 🎨\nモデル: ${el.modelSelect.options[el.modelSelect.selectedIndex].text}\nグラデーションガイド: ${gradText}\n評価: ${state.currentEvaluation} (スコア: ${state.currentScore}点 / ${(state.currentTime / 1000).toFixed(1)}s)\n\n${url}\n#ColorGuesser`;
 };
 
 // Xツイート用（URLは別パラメーターでt.co短縮）
@@ -334,11 +351,13 @@ const getShareTweetText = () => {
     const totalTimeMs = state.history.reduce((acc, h) => acc + h.time, 0);
     const totalTimeSec = (totalTimeMs / 1000).toFixed(1);
     return `🎨 Color Guesser チャレンジ結果 🎨\nスコア: ${state.totalScore} / 500  ⏱ ${totalTimeSec}s\n\n` +
-        state.history.map(i => `Round ${i.round}: ${i.score}点  ${(i.time / 1000).toFixed(1)}s`).join('\n');
+        state.history.map(i => `Round ${i.round}: ${i.score}点  ${(i.time / 1000).toFixed(1)}s (${i.model}・${i.grad ? 'ガイド有' : 'ガイド無'})`).join('\n');
 };
 
-const getFreeTweetText = () =>
-    `🎨 Color Guesser フリープレイ 🎨\nモデル: ${el.modelSelect.options[el.modelSelect.selectedIndex].text}\n評価: ${state.currentEvaluation} (スコア: ${state.currentScore}点 / ${(state.currentTime / 1000).toFixed(1)}s)`;
+const getFreeTweetText = () => {
+    const gradText = state.showGradients ? 'あり' : 'なし';
+    return `🎨 Color Guesser フリープレイ 🎨\nモデル: ${el.modelSelect.options[el.modelSelect.selectedIndex].text}\nグラデーションガイド: ${gradText}\n評価: ${state.currentEvaluation} (スコア: ${state.currentScore}点 / ${(state.currentTime / 1000).toFixed(1)}s)`;
+};
 
 const openXShare = (text, url) => {
     const params = new URLSearchParams({ text, url, hashtags: 'ColorGuesser' });
@@ -356,7 +375,11 @@ el.btnShare.addEventListener('click', () => navigator.clipboard.writeText(getSha
 el.btnShareX.addEventListener('click', () => openXShare(getShareTweetText(), getChallengeShareUrl()));
 if (el.btnShareFree) el.btnShareFree.addEventListener('click', () => navigator.clipboard.writeText(getFreeShareText()).then(() => showToast("コピーしました")).catch(() => showToast("失敗しました")));
 if (el.btnShareXFree) el.btnShareXFree.addEventListener('click', () => openXShare(getFreeTweetText(), getFreeShareUrl()));
-el.toggleGradient.addEventListener('change', e => { state.showGradients = e.target.checked; updateUIFromGuess(); });
+el.toggleGradient.addEventListener('change', e => {
+    state.showGradients = e.target.checked;
+    localStorage.setItem('color_guesser_show_gradients', state.showGradients);
+    updateUIFromGuess();
+});
 
 // --- シェア結果表示 ---
 const showSharedResult = data => {
@@ -378,6 +401,9 @@ const showSharedResult = data => {
                 <div class="relative w-full aspect-[2/1] rounded-sm flex overflow-hidden ring-1 ring-slate-200">
                     <div class="w-1/2 h-full" style="background:${tCss}"></div>
                     <div class="w-1/2 h-full" style="background:${gCss}"></div>
+                </div>
+                <div class="text-center text-[10px] font-bold text-slate-400 tracking-wider pt-2">
+                    モデル: <span class="text-slate-700">${(data.model || '').toUpperCase()}</span> · グラデーションガイド: <span class="text-slate-700">${data.grad ? 'あり' : 'なし'}</span>
                 </div>
             </div>
             <div class="flex justify-center gap-8 text-center">
@@ -408,18 +434,21 @@ const showSharedResult = data => {
                     <p class="text-[10px] font-bold text-slate-400 tracking-widest mt-2">合計タイム</p>
                 </div>
             </div>
-            <div class="space-y-1 border-t border-slate-100 pt-4">
+            <div class="space-y-0 border-t border-slate-100 pt-2">
                 ${data.history.map(h => {
             const tCss = `rgb(${h.tRgb.join(',')})`;
             return `
-                    <div class="flex items-center justify-between p-2.5">
+                    <div class="flex items-center justify-between p-2.5 border-b border-slate-50 last:border-0">
                         <span class="font-bold w-8 text-slate-400 text-xs">R${h.r}</span>
                         <div class="flex gap-1.5 flex-1 px-2">
                             <div class="w-5 h-5 rounded-sm" style="background:${tCss}"></div>
                             <div class="w-5 h-5 rounded-sm" style="background:${h.gCss}"></div>
                         </div>
-                        <span class="font-mono text-slate-400 text-xs mr-3">${(h.t / 1000).toFixed(1)}s</span>
-                        <span class="font-mono text-slate-800 font-bold">${h.s}</span>
+                        <div class="flex flex-col items-end">
+                            <span class="text-[9px] font-bold text-slate-400 tracking-wider">${(h.m || 'RGB').toUpperCase()} · ${h.g ? 'ガイド有' : 'ガイド無'}</span>
+                            <span class="font-mono text-slate-400 text-[11px]">${(h.t / 1000).toFixed(1)}s</span>
+                        </div>
+                        <span class="font-mono text-slate-800 font-bold w-8 text-right ml-3">${h.s}</span>
                     </div>`;
         }).join('')}
             </div>
@@ -447,6 +476,19 @@ const checkSharedResult = () => {
         }
     }
 };
+
+// localStorageから設定を復元
+const savedShowGradients = localStorage.getItem('color_guesser_show_gradients');
+if (savedShowGradients !== null) {
+    state.showGradients = savedShowGradients === 'true';
+    el.toggleGradient.checked = state.showGradients;
+}
+
+const savedModel = localStorage.getItem('color_guesser_model');
+if (savedModel && models[savedModel]) {
+    el.modelSelect.value = savedModel;
+    state.currentModelId = savedModel;
+}
 
 initGame(true);
 checkSharedResult();
