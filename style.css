@@ -35,3 +35,13 @@ input[type="range"] {
         }
     }
 }
+
+body, .font-sans, input, select, button {
+    font-family: 'Outfit', 'M PLUS 1p', -apple-system, sans-serif !important;
+}
+
+header h1 {
+    font-weight: 900;
+    letter-spacing: 0.15em;
+    line-height: 0.95;
+}
