@@ -226,6 +226,9 @@ const submitGuess = () => {
             targetColorCSS: `rgb(${state.targetRgb.join(' ')})`,
             guessColorCSS: `rgb(${guessRgb.join(',')})`,
             model: el.modelSelect.options[el.modelSelect.selectedIndex].text,
+            modelId: el.modelSelect.value,
+            targetParams: [...state.targetParams],
+            guessParams: [...state.guessParams],
             grad: state.showGradients
         });
         el.challengeTotalScore.textContent = `SCORE: ${state.totalScore}`;
@@ -245,20 +248,35 @@ const handleNext = () => {
         el.summaryTotalScore.innerHTML = `${state.totalScore} <span class="text-xl text-slate-400 font-medium">/500</span>`;
         el.summaryFeedback.textContent = state.totalScore >= 450 ? "素晴らしい結果です！" : state.totalScore >= 350 ? "良い目を持っていますね！" : "あと少し！練習あるのみ！";
         if (el.summaryTotalTime) el.summaryTotalTime.textContent = totalTimeSec + 's';
-        el.summaryHistory.innerHTML = state.history.map(item => `
-            <div class="flex items-center justify-between p-2.5 border-b border-slate-50 last:border-0">
-                <span class="font-bold w-8 text-slate-400 text-xs">R${item.round}</span>
-                <div class="flex gap-1.5 flex-1 px-2">
-                    <div class="w-5 h-5 rounded-sm" style="background:${item.targetColorCSS}"></div>
-                    <div class="w-5 h-5 rounded-sm" style="background:${item.guessColorCSS}"></div>
+        el.summaryHistory.innerHTML = state.history.map(item => {
+            const model = models[item.modelId];
+            const paramsText = model ? model.labels.map((label, idx) => {
+                const targetFmt = model.sliders[idx].format(item.targetParams[idx]);
+                const guessFmt = model.sliders[idx].format(item.guessParams[idx]);
+                return `<span class="inline-block mr-2"><span class="text-slate-400 font-bold">${label}:</span> <span class="text-slate-500 font-mono text-[9px]">${targetFmt}</span><span class="text-slate-300 mx-0.5">→</span><span class="text-slate-800 font-bold font-mono text-[9px]">${guessFmt}</span></span>`;
+            }).join(' ') : '';
+
+            return `
+            <div class="flex flex-col p-2.5 border-b border-slate-50 last:border-0 gap-1">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2 flex-1">
+                        <span class="font-bold w-6 text-slate-400 text-xs">R${item.round}</span>
+                        <div class="flex gap-1">
+                            <div class="w-5 h-5 rounded-sm ring-1 ring-slate-100" style="background:${item.targetColorCSS}" title="目標値"></div>
+                            <div class="w-5 h-5 rounded-sm ring-1 ring-slate-100" style="background:${item.guessColorCSS}" title="入力値"></div>
+                        </div>
+                        <div class="text-[9px] font-bold text-slate-400 tracking-wider ml-1">
+                            ${item.model} · ${item.grad ? 'ガイド有' : 'ガイド無'} · ${(item.time / 1000).toFixed(1)}s
+                        </div>
+                    </div>
+                    <span class="font-mono text-slate-800 text-sm font-bold w-8 text-right">${item.score}</span>
                 </div>
-                <div class="flex flex-col items-end">
-                    <span class="text-[9px] font-bold text-slate-400 tracking-wider">${item.model} · ${item.grad ? 'ガイド有' : 'ガイド無'}</span>
-                    <span class="font-mono text-slate-400 text-[11px]">${(item.time / 1000).toFixed(1)}s</span>
+                <div class="text-[10px] pl-8 leading-none">
+                    ${paramsText}
                 </div>
-                <span class="font-mono text-slate-800 text-base font-bold ml-3 w-8 text-right">${item.score}</span>
             </div>
-        `).join('');
+            `;
+        }).join('');
         el.modalSummary.classList.remove('hidden');
     } else {
         if (state.mode === 'challenge') state.round++;
@@ -324,6 +342,9 @@ const getChallengeShareUrl = () => {
             s: h.score,
             t: h.time,
             m: h.model,
+            mId: h.modelId,
+            tP: h.targetParams,
+            gP: h.guessParams,
             g: h.grad
         }))
     };
@@ -393,8 +414,21 @@ const showSharedResult = data => {
         const gCss = `rgb(${data.gRgb.join(',')})`;
         const evalColors = { S: 'text-amber-500', A: 'text-emerald-500', B: 'text-blue-500', C: 'text-purple-500', D: 'text-yellow-600', E: 'text-rose-500' };
         const evalColor = evalColors[data.eval] || 'text-slate-800';
+
+        const model = models[data.model];
+        let paramsText = '';
+        if (model) {
+            const tParams = model.fromRgb(...data.tRgb);
+            const gParams = model.fromRgb(...data.gRgb);
+            paramsText = model.labels.map((label, idx) => {
+                const targetFmt = model.sliders[idx].format(tParams[idx]);
+                const guessFmt = model.sliders[idx].format(gParams[idx]);
+                return `<span class="inline-block mr-3"><span class="text-slate-400 font-bold">${label}:</span> <span class="text-slate-500 font-mono text-[10px]">${targetFmt}</span><span class="text-slate-300 mx-1">→</span><span class="text-slate-800 font-bold font-mono text-[10px]">${guessFmt}</span></span>`;
+            }).join(' ');
+        }
+
         html = `
-            <div class="space-y-1.5 mb-8">
+            <div class="space-y-1.5 mb-6">
                 <div class="flex justify-between px-2 text-[10px] font-bold text-slate-400 tracking-widest">
                     <span>TARGET</span><span>GUESS</span>
                 </div>
@@ -405,8 +439,12 @@ const showSharedResult = data => {
                 <div class="text-center text-[10px] font-bold text-slate-400 tracking-wider pt-2">
                     モデル: <span class="text-slate-700">${(data.model || '').toUpperCase()}</span> · グラデーションガイド: <span class="text-slate-700">${data.grad ? 'あり' : 'なし'}</span>
                 </div>
+                ${paramsText ? `
+                <div class="text-center text-[10px] pt-3 border-t border-slate-100 mt-2 leading-none">
+                    ${paramsText}
+                </div>` : ''}
             </div>
-            <div class="flex justify-center gap-8 text-center">
+            <div class="flex justify-center gap-8 text-center pt-2">
                 <div>
                     <p class="text-5xl font-black ${evalColor}">${data.eval}</p>
                     <p class="text-[10px] font-bold text-slate-400 tracking-widest mt-2">評価</p>
@@ -437,18 +475,29 @@ const showSharedResult = data => {
             <div class="space-y-0 border-t border-slate-100 pt-2">
                 ${data.history.map(h => {
             const tCss = `rgb(${h.tRgb.join(',')})`;
+            const model = models[h.mId];
+            const paramsText = (model && h.tP && h.gP) ? model.labels.map((label, idx) => {
+                const targetFmt = model.sliders[idx].format(h.tP[idx]);
+                const guessFmt = model.sliders[idx].format(h.gP[idx]);
+                return `<span class="inline-block mr-2"><span class="text-slate-400 font-bold">${label}:</span> <span class="text-slate-500 font-mono text-[9px]">${targetFmt}</span><span class="text-slate-300 mx-0.5">→</span><span class="text-slate-800 font-bold font-mono text-[9px]">${guessFmt}</span></span>`;
+            }).join(' ') : '';
+
             return `
-                    <div class="flex items-center justify-between p-2.5 border-b border-slate-50 last:border-0">
-                        <span class="font-bold w-8 text-slate-400 text-xs">R${h.r}</span>
-                        <div class="flex gap-1.5 flex-1 px-2">
-                            <div class="w-5 h-5 rounded-sm" style="background:${tCss}"></div>
-                            <div class="w-5 h-5 rounded-sm" style="background:${h.gCss}"></div>
+                    <div class="flex flex-col p-2.5 border-b border-slate-50 last:border-0 gap-1">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-2 flex-1">
+                                <span class="font-bold w-6 text-slate-400 text-xs">R${h.r}</span>
+                                <div class="flex gap-1">
+                                    <div class="w-5 h-5 rounded-sm ring-1 ring-slate-100" style="background:${tCss}"></div>
+                                    <div class="w-5 h-5 rounded-sm ring-1 ring-slate-100" style="background:${h.gCss}"></div>
+                                </div>
+                                <div class="text-[9px] font-bold text-slate-400 tracking-wider ml-1">
+                                    ${(h.m || 'RGB').toUpperCase()} · ${h.g ? 'ガイド有' : 'ガイド無'} · ${(h.t / 1000).toFixed(1)}s
+                                </div>
+                            </div>
+                            <span class="font-mono text-slate-800 font-bold w-8 text-right ml-3">${h.s}</span>
                         </div>
-                        <div class="flex flex-col items-end">
-                            <span class="text-[9px] font-bold text-slate-400 tracking-wider">${(h.m || 'RGB').toUpperCase()} · ${h.g ? 'ガイド有' : 'ガイド無'}</span>
-                            <span class="font-mono text-slate-400 text-[11px]">${(h.t / 1000).toFixed(1)}s</span>
-                        </div>
-                        <span class="font-mono text-slate-800 font-bold w-8 text-right ml-3">${h.s}</span>
+                        ${paramsText ? `<div class="text-[10px] pl-8 leading-none">${paramsText}</div>` : ''}
                     </div>`;
         }).join('')}
             </div>
