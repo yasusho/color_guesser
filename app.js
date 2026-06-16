@@ -4,7 +4,27 @@ const state = {
     isSubmitted: false, showGradients: false, targetRgb: [],
     guessParams: [0, 0, 0], targetParams: [0, 0, 0],
     currentScore: 0, currentDistance: 0, currentEvaluation: 'S',
-    currentModelId: 'rgb'
+    currentModelId: 'rgb',
+    timerStart: null, timerInterval: null, elapsedMs: 0, currentTime: 0
+};
+
+// --- タイマー ---
+const startTimer = () => {
+    state.timerStart = Date.now();
+    state.elapsedMs = 0;
+    if (state.timerInterval) clearInterval(state.timerInterval);
+    state.timerInterval = setInterval(() => {
+        state.elapsedMs = Date.now() - state.timerStart;
+        const sec = (state.elapsedMs / 1000).toFixed(1);
+        if (el.timerDisplay) el.timerDisplay.textContent = sec + 's';
+    }, 100);
+};
+
+const stopTimer = () => {
+    if (state.timerInterval) clearInterval(state.timerInterval);
+    state.timerInterval = null;
+    state.currentTime = state.elapsedMs;
+    if (el.timerDisplay) el.timerDisplay.textContent = (state.currentTime / 1000).toFixed(1) + 's';
 };
 
 // --- HTMLコンポーネントの動的生成 ---
@@ -94,7 +114,7 @@ const updateModelLayout = () => {
     paramNames.forEach((n, i) => n.textContent = model.labels[i]);
     paramDescs.forEach((n, i) => n.textContent = model.descs[i]);
     paramDots.forEach((n, i) => n.className = `param-dot w-2 h-2 rounded-full shrink-0 ${model.dots[i]}`);
-    
+
     sliders.forEach((s, i) => {
         s.min = model.sliders[i].min;
         s.max = model.sliders[i].max;
@@ -110,7 +130,7 @@ const updateModelLayout = () => {
         }
         sliders.forEach((s, i) => s.value = state.guessParams[i]);
     }
-    
+
     state.currentModelId = el.modelSelect.value;
     setupAdjustButtons();
     updateUIFromGuess();
@@ -121,35 +141,40 @@ const initGame = (isNewGame = false) => {
         state.round = 1; state.totalScore = 0; state.history = [];
         el.challengeTotalScore.textContent = "SCORE: 0";
     }
-    
+
     const model = models[el.modelSelect.value];
     if (state.targetRgb.length === 0) {
-        state.targetRgb = [Math.floor(Math.random()*210+25), Math.floor(Math.random()*210+25), Math.floor(Math.random()*210+25)];
+        state.targetRgb = [Math.floor(Math.random() * 210 + 25), Math.floor(Math.random() * 210 + 25), Math.floor(Math.random() * 210 + 25)];
         state.targetParams = model.fromRgb(...state.targetRgb);
         sliders.forEach((s, i) => {
-            s.value = state.targetParams[i] + (model.sliders[i].max - model.sliders[i].min) * (Math.random()*0.4 - 0.2);
+            s.value = state.targetParams[i] + (model.sliders[i].max - model.sliders[i].min) * (Math.random() * 0.4 - 0.2);
             state.guessParams[i] = parseFloat(s.value);
         });
         state.currentModelId = el.modelSelect.value;
     }
-    
+
     el.colorTarget.style.backgroundColor = `rgb(${state.targetRgb.join(',')})`;
     el.challengeRound.textContent = `ROUND: ${state.round} / 5`;
-    
+
     toggleControls(false);
-    el.actionPanel.classList.remove('hidden');
+    el.btnSubmit.classList.remove('hidden');
+    el.btnNext.classList.add('hidden');
     el.resultPanel.classList.add('hidden');
     updateModelLayout();
+    startTimer();
 };
 
 const submitGuess = () => {
+    stopTimer();
+    const timeSec = (state.currentTime / 1000).toFixed(1);
     toggleControls(true);
-    el.actionPanel.classList.add('hidden');
+    el.btnSubmit.classList.add('hidden');
+    el.btnNext.classList.remove('hidden');
     el.resultPanel.classList.remove('hidden');
 
     const model = models[el.modelSelect.value];
     let distanceSq = 0;
-    
+
     state.targetParams.forEach((tVal, i) => {
         let diff = Math.abs(tVal - state.guessParams[i]);
         if (i === model.hueIndex) {
@@ -161,7 +186,7 @@ const submitGuess = () => {
         }
         distanceSq += diff ** 2;
     });
-    
+
     const distance = Math.sqrt(distanceSq);
     let score = Math.max(0, Math.min(100, Math.round(100 * (1 - distance / 0.35))));
     if (distance < 0.01) score = 100;
@@ -177,6 +202,9 @@ const submitGuess = () => {
     el.evaluationText.textContent = evaluation.txt;
     el.evaluationText.className = `text-5xl font-bold ${evaluation.color}`;
 
+    // タイム表示を結果エリアに更新
+    if (el.resultTimeDisplay) el.resultTimeDisplay.textContent = timeSec + 's';
+
     state.currentScore = score;
     state.currentDistance = distance;
     state.currentEvaluation = evaluation.txt;
@@ -188,21 +216,25 @@ const submitGuess = () => {
 
     if (state.mode === 'challenge') {
         state.totalScore += score;
-        state.history.push({ round: state.round, score, distance, targetColorCSS: `rgb(${state.targetRgb.join(' ')})`, guessColorCSS: model.toCss(...state.guessParams) });
+        const guessRgb = model.toRgb(...state.guessParams).map(Math.round);
+        state.history.push({ round: state.round, score, distance, time: state.currentTime, targetColorCSS: `rgb(${state.targetRgb.join(' ')})`, guessColorCSS: `rgb(${guessRgb.join(',')})` });
         el.challengeTotalScore.textContent = `SCORE: ${state.totalScore}`;
         el.nextText.textContent = state.round < 5 ? "次のラウンドへ" : "結果発表";
-        if(el.freeShareContainer) el.freeShareContainer.classList.add('hidden');
+        if (el.freeShareContainer) el.freeShareContainer.classList.add('hidden');
     } else {
         el.nextText.textContent = "次の色へ";
-        if(el.freeShareContainer) el.freeShareContainer.classList.remove('hidden');
+        if (el.freeShareContainer) el.freeShareContainer.classList.remove('hidden');
     }
     lucide.createIcons();
 };
 
 const handleNext = () => {
     if (state.mode === 'challenge' && state.round >= 5) {
+        const totalTimeMs = state.history.reduce((acc, h) => acc + h.time, 0);
+        const totalTimeSec = (totalTimeMs / 1000).toFixed(1);
         el.summaryTotalScore.innerHTML = `${state.totalScore} <span class="text-xl text-slate-400 font-medium">/500</span>`;
         el.summaryFeedback.textContent = state.totalScore >= 450 ? "素晴らしい結果です！" : state.totalScore >= 350 ? "良い目を持っていますね！" : "あと少し！練習あるのみ！";
+        if (el.summaryTotalTime) el.summaryTotalTime.textContent = totalTimeSec + 's';
         el.summaryHistory.innerHTML = state.history.map(item => `
             <div class="flex items-center justify-between p-2.5">
                 <span class="font-bold w-8 text-slate-400">R${item.round}</span>
@@ -210,7 +242,8 @@ const handleNext = () => {
                     <div class="w-5 h-5 rounded-sm" style="background:${item.targetColorCSS}"></div>
                     <div class="w-5 h-5 rounded-sm" style="background:${item.guessColorCSS}"></div>
                 </div>
-                <span class="font-mono text-slate-800 text-base">${item.score}</span>
+                <span class="font-mono text-slate-400 text-xs">${(item.time / 1000).toFixed(1)}s</span>
+                <span class="font-mono text-slate-800 text-base ml-3">${item.score}</span>
             </div>
         `).join('');
         el.modalSummary.classList.remove('hidden');
@@ -233,10 +266,72 @@ const switchMode = (newMode) => {
     initGame(newMode === 'challenge');
 };
 
-const getShareText = () => `🎨 Color Guesser チャレンジ結果 🎨\nスコア: ${state.totalScore} / 500\n\n` +
-    state.history.map(i => `Round ${i.round}: ${i.score}点 (誤差: ${i.distance.toFixed(3)})`).join('\n') + `\n\nhttps://yasusho.github.io/color_guesser/\n#ColorGuesser`;
+// --- シェアURL生成 ---
+const encodeShareData = data => btoa(unescape(encodeURIComponent(JSON.stringify(data))));
+const decodeShareData = enc => JSON.parse(decodeURIComponent(escape(atob(enc))));
+const getBaseUrl = () => location.href.replace(/#.*$/, '');
 
-const getFreeShareText = () => `🎨 Color Guesser フリープレイ 🎨\nモデル: ${el.modelSelect.options[el.modelSelect.selectedIndex].text}\n評価: ${state.currentEvaluation} (スコア: ${state.currentScore}点 / 誤差: ${state.currentDistance.toFixed(3)})\n\nhttps://yasusho.github.io/color_guesser/\n#ColorGuesser`;
+const getFreeShareUrl = () => {
+    const model = models[el.modelSelect.value];
+    const guessRgb = model.toRgb(...state.guessParams).map(Math.round);
+    const data = {
+        v: 1, mode: 'free',
+        model: el.modelSelect.value,
+        tRgb: state.targetRgb,
+        gRgb: guessRgb,
+        score: state.currentScore,
+        eval: state.currentEvaluation,
+        time: state.currentTime
+    };
+    return `${getBaseUrl()}#r=${encodeShareData(data)}`;
+};
+
+const getChallengeShareUrl = () => {
+    const data = {
+        v: 1, mode: 'challenge',
+        totalScore: state.totalScore,
+        totalTime: state.history.reduce((a, h) => a + h.time, 0),
+        history: state.history.map(h => ({
+            r: h.round,
+            tRgb: h.targetColorCSS.replace(/rgb\(|\)/g, '').split(/[\s,]+/).map(Number),
+            gCss: h.guessColorCSS,
+            s: h.score,
+            t: h.time
+        }))
+    };
+    return `${getBaseUrl()}#r=${encodeShareData(data)}`;
+};
+
+// クリップボード用（URLあり）
+const getShareText = () => {
+    const totalTimeMs = state.history.reduce((acc, h) => acc + h.time, 0);
+    const totalTimeSec = (totalTimeMs / 1000).toFixed(1);
+    const url = getChallengeShareUrl();
+    return `🎨 Color Guesser チャレンジ結果 🎨\nスコア: ${state.totalScore} / 500  ⏱ ${totalTimeSec}s\n\n` +
+        state.history.map(i => `Round ${i.round}: ${i.score}点  ${(i.time / 1000).toFixed(1)}s`).join('\n') +
+        `\n\n${url}\n#ColorGuesser`;
+};
+
+const getFreeShareText = () => {
+    const url = getFreeShareUrl();
+    return `🎨 Color Guesser フリープレイ 🎨\nモデル: ${el.modelSelect.options[el.modelSelect.selectedIndex].text}\n評価: ${state.currentEvaluation} (スコア: ${state.currentScore}点 / ${(state.currentTime / 1000).toFixed(1)}s)\n\n${url}\n#ColorGuesser`;
+};
+
+// Xツイート用（URLは別パラメーターでt.co短縮）
+const getShareTweetText = () => {
+    const totalTimeMs = state.history.reduce((acc, h) => acc + h.time, 0);
+    const totalTimeSec = (totalTimeMs / 1000).toFixed(1);
+    return `🎨 Color Guesser チャレンジ結果 🎨\nスコア: ${state.totalScore} / 500  ⏱ ${totalTimeSec}s\n\n` +
+        state.history.map(i => `Round ${i.round}: ${i.score}点  ${(i.time / 1000).toFixed(1)}s`).join('\n');
+};
+
+const getFreeTweetText = () =>
+    `🎨 Color Guesser フリープレイ 🎨\nモデル: ${el.modelSelect.options[el.modelSelect.selectedIndex].text}\n評価: ${state.currentEvaluation} (スコア: ${state.currentScore}点 / ${(state.currentTime / 1000).toFixed(1)}s)`;
+
+const openXShare = (text, url) => {
+    const params = new URLSearchParams({ text, url, hashtags: 'ColorGuesser' });
+    window.open(`https://twitter.com/intent/tweet?${params}`, '_blank');
+};
 
 sliders.forEach(s => s.addEventListener('input', updateUIFromGuess));
 el.modelSelect.addEventListener('change', updateModelLayout);
@@ -246,9 +341,100 @@ el.modeFree.addEventListener('click', () => switchMode('free'));
 el.modeChallenge.addEventListener('click', () => switchMode('challenge'));
 el.btnRestart.addEventListener('click', () => { el.modalSummary.classList.add('hidden'); state.targetRgb = []; initGame(true); });
 el.btnShare.addEventListener('click', () => navigator.clipboard.writeText(getShareText()).then(() => showToast("コピーしました")).catch(() => showToast("失敗しました")));
-el.btnShareX.addEventListener('click', () => window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(getShareText())}`, '_blank'));
+el.btnShareX.addEventListener('click', () => openXShare(getShareTweetText(), getChallengeShareUrl()));
 if (el.btnShareFree) el.btnShareFree.addEventListener('click', () => navigator.clipboard.writeText(getFreeShareText()).then(() => showToast("コピーしました")).catch(() => showToast("失敗しました")));
-if (el.btnShareXFree) el.btnShareXFree.addEventListener('click', () => window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(getFreeShareText())}`, '_blank'));
+if (el.btnShareXFree) el.btnShareXFree.addEventListener('click', () => openXShare(getFreeTweetText(), getFreeShareUrl()));
 el.toggleGradient.addEventListener('change', e => { state.showGradients = e.target.checked; updateUIFromGuess(); });
 
+// --- シェア結果表示 ---
+const showSharedResult = data => {
+    const modal = el.modalSharedResult;
+    const content = el.sharedResultContent;
+    if (!modal || !content) return;
+
+    let html = '';
+    if (data.mode === 'free') {
+        const tCss = `rgb(${data.tRgb.join(',')})`;
+        const gCss = `rgb(${data.gRgb.join(',')})`;
+        const evalColors = { S: 'text-amber-500', A: 'text-emerald-500', B: 'text-blue-500', C: 'text-purple-500', D: 'text-yellow-600', E: 'text-rose-500' };
+        const evalColor = evalColors[data.eval] || 'text-slate-800';
+        html = `
+            <div class="space-y-1.5 mb-8">
+                <div class="flex justify-between px-2 text-[10px] font-bold text-slate-400 tracking-widest">
+                    <span>TARGET</span><span>GUESS</span>
+                </div>
+                <div class="relative w-full aspect-[2/1] rounded-sm flex overflow-hidden ring-1 ring-slate-200">
+                    <div class="w-1/2 h-full" style="background:${tCss}"></div>
+                    <div class="w-1/2 h-full" style="background:${gCss}"></div>
+                </div>
+            </div>
+            <div class="flex justify-center gap-8 text-center">
+                <div>
+                    <p class="text-5xl font-black ${evalColor}">${data.eval}</p>
+                    <p class="text-[10px] font-bold text-slate-400 tracking-widest mt-2">評価</p>
+                </div>
+                <div>
+                    <p class="text-5xl font-black text-slate-800">${data.score}</p>
+                    <p class="text-[10px] font-bold text-slate-400 tracking-widest mt-2">スコア</p>
+                </div>
+                <div>
+                    <p class="text-5xl font-black text-slate-800">${(data.time / 1000).toFixed(1)}<span class="text-2xl text-slate-400">s</span></p>
+                    <p class="text-[10px] font-bold text-slate-400 tracking-widest mt-2">タイム</p>
+                </div>
+            </div>
+        `;
+    } else {
+        const totalTimeSec = (data.totalTime / 1000).toFixed(1);
+        html = `
+            <div class="flex justify-center gap-10 text-center mb-8">
+                <div>
+                    <p class="text-4xl font-black text-slate-800">${data.totalScore}<span class="text-lg text-slate-400 font-medium">/500</span></p>
+                    <p class="text-[10px] font-bold text-slate-400 tracking-widest mt-2">総合スコア</p>
+                </div>
+                <div>
+                    <p class="text-4xl font-black text-slate-800">${totalTimeSec}<span class="text-lg text-slate-400">s</span></p>
+                    <p class="text-[10px] font-bold text-slate-400 tracking-widest mt-2">合計タイム</p>
+                </div>
+            </div>
+            <div class="space-y-1 border-t border-slate-100 pt-4">
+                ${data.history.map(h => {
+            const tCss = `rgb(${h.tRgb.join(',')})`;
+            return `
+                    <div class="flex items-center justify-between p-2.5">
+                        <span class="font-bold w-8 text-slate-400 text-xs">R${h.r}</span>
+                        <div class="flex gap-1.5 flex-1 px-2">
+                            <div class="w-5 h-5 rounded-sm" style="background:${tCss}"></div>
+                            <div class="w-5 h-5 rounded-sm" style="background:${h.gCss}"></div>
+                        </div>
+                        <span class="font-mono text-slate-400 text-xs mr-3">${(h.t / 1000).toFixed(1)}s</span>
+                        <span class="font-mono text-slate-800 font-bold">${h.s}</span>
+                    </div>`;
+        }).join('')}
+            </div>
+        `;
+    }
+    content.innerHTML = html;
+    modal.classList.remove('hidden');
+    lucide.createIcons();
+};
+
+if (el.btnPlayMyself) el.btnPlayMyself.addEventListener('click', () => {
+    el.modalSharedResult.classList.add('hidden');
+    history.replaceState(null, '', location.pathname + location.search);
+});
+
+// ページ読み込み時にシェアリンクを確認
+const checkSharedResult = () => {
+    const hash = window.location.hash;
+    if (hash.startsWith('#r=')) {
+        try {
+            const data = decodeShareData(hash.slice(3));
+            if (data && data.v === 1) showSharedResult(data);
+        } catch (e) {
+            console.warn('シェアリンクの解析に失敗:', e);
+        }
+    }
+};
+
 initGame(true);
+checkSharedResult();
