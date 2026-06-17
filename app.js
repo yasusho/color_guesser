@@ -236,8 +236,13 @@ const submitGuess = () => {
     });
 
     const distance = Math.sqrt(distanceSq);
-    let score = Math.max(0, Math.min(100, Math.round(100 * (1 - distance / 0.35))));
-    if (distance < 0.01) score = 100;
+    const isExactMatch = state.targetParams.every((tVal, i) => tVal === state.guessParams[i]);
+    let score = 0;
+    if (isExactMatch) {
+        score = 100;
+    } else {
+        score = Math.max(0, Math.min(99, Math.round(100 * (1 - distance / 0.35))));
+    }
 
     const evals = [
         { min: 100, txt: 'SS', color: 'bg-clip-text text-transparent bg-gradient-to-r from-red-500 via-amber-500 to-yellow-400 font-extrabold' },
