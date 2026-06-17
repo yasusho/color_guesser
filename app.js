@@ -1,7 +1,12 @@
+const roundToStep = (val, step) => {
+    const inv = 1 / step;
+    return Math.round(val * inv) / inv;
+};
+
 // --- アプリケーション状態 ---
 const state = {
     mode: 'free', round: 1, totalScore: 0, history: [],
-    isSubmitted: false, showGradients: false, targetRgb: [],
+    isSubmitted: false, showGradients: false, targetRgb: [], originalTargetRgb: [],
     guessParams: [0, 0, 0], targetParams: [0, 0, 0],
     currentScore: 0, currentDistance: 0, currentEvaluation: 'S',
     currentModelId: 'rgb',
@@ -98,14 +103,43 @@ const updateUIFromGuess = () => {
 
 const setupAdjustButtons = () => {
     [0, 1, 2].forEach(i => {
-        const adjust = diff => {
-            if (state.isSubmitted) return;
-            sliders[i].value = Math.max(parseFloat(sliders[i].min), Math.min(parseFloat(sliders[i].max), parseFloat(sliders[i].value) + diff));
-            updateUIFromGuess();
-        };
         const s = models[el.modelSelect.value].sliders[i];
-        btnMinus[i].onclick = () => adjust(-s.step);
-        btnPlus[i].onclick = () => adjust(s.step);
+
+        const setupLongPress = (btn, diff) => {
+            let timer = null, interval = null;
+
+            const adjust = () => {
+                if (state.isSubmitted) return;
+                const min = parseFloat(sliders[i].min);
+                const max = parseFloat(sliders[i].max);
+                const nextVal = parseFloat(sliders[i].value) + diff;
+                sliders[i].value = Math.max(min, Math.min(max, nextVal));
+                updateUIFromGuess();
+            };
+
+            const start = (e) => {
+                e.preventDefault();
+                adjust();
+                timer = setTimeout(() => {
+                    interval = setInterval(adjust, 50);
+                }, 300);
+            };
+
+            const stop = () => {
+                clearTimeout(timer);
+                clearInterval(interval);
+            };
+
+            btn.onmousedown = start;
+            btn.ontouchstart = start;
+            btn.onmouseup = stop;
+            btn.onmouseleave = stop;
+            btn.ontouchend = stop;
+            btn.ontouchcancel = stop;
+        };
+
+        setupLongPress(btnMinus[i], -s.step);
+        setupLongPress(btnPlus[i], s.step);
     });
 };
 
@@ -121,14 +155,21 @@ const updateModelLayout = () => {
         s.step = model.sliders[i].step;
     });
 
-    if (state.targetRgb.length > 0) {
-        state.targetParams = model.fromRgb(...state.targetRgb);
+    if (state.originalTargetRgb && state.originalTargetRgb.length > 0) {
+        const rawTargetParams = model.fromRgb(...state.originalTargetRgb);
+        state.targetParams = rawTargetParams.map((v, i) => roundToStep(v, model.sliders[i].step));
+        state.targetRgb = model.toRgb(...state.targetParams).map(Math.round);
+
         if (state.currentModelId && state.currentModelId !== el.modelSelect.value) {
-            const oldModel = models[state.currentModelId];
-            const guessRgb = oldModel.toRgb(...state.guessParams);
+            const guessRgb = models[state.currentModelId].toRgb(...state.guessParams);
             state.guessParams = model.fromRgb(...guessRgb);
         }
+        state.guessParams = state.guessParams.map((v, i) => roundToStep(v, model.sliders[i].step));
         sliders.forEach((s, i) => s.value = state.guessParams[i]);
+    }
+
+    if (state.targetRgb.length > 0) {
+        el.colorTarget.style.backgroundColor = `rgb(${state.targetRgb.join(',')})`;
     }
 
     state.currentModelId = el.modelSelect.value;
@@ -145,10 +186,16 @@ const initGame = (isNewGame = false) => {
 
     const model = models[el.modelSelect.value];
     if (state.targetRgb.length === 0) {
-        state.targetRgb = [Math.floor(Math.random() * 210 + 25), Math.floor(Math.random() * 210 + 25), Math.floor(Math.random() * 210 + 25)];
-        state.targetParams = model.fromRgb(...state.targetRgb);
+        state.originalTargetRgb = [Math.floor(Math.random() * 210 + 25), Math.floor(Math.random() * 210 + 25), Math.floor(Math.random() * 210 + 25)];
+        state.targetRgb = [...state.originalTargetRgb];
+        
+        const rawTargetParams = model.fromRgb(...state.originalTargetRgb);
+        state.targetParams = rawTargetParams.map((v, i) => roundToStep(v, model.sliders[i].step));
+
         sliders.forEach((s, i) => {
-            s.value = state.targetParams[i] + (model.sliders[i].max - model.sliders[i].min) * (Math.random() * 0.4 - 0.2);
+            let val = state.targetParams[i] + (model.sliders[i].max - model.sliders[i].min) * (Math.random() * 0.4 - 0.2);
+            val = Math.max(model.sliders[i].min, Math.min(model.sliders[i].max, val));
+            s.value = roundToStep(val, model.sliders[i].step);
             state.guessParams[i] = parseFloat(s.value);
         });
         state.currentModelId = el.modelSelect.value;
@@ -193,6 +240,7 @@ const submitGuess = () => {
     if (distance < 0.01) score = 100;
 
     const evals = [
+        { min: 100, txt: 'SS', color: 'bg-clip-text text-transparent bg-gradient-to-r from-red-500 via-amber-500 to-yellow-400 font-extrabold' },
         { min: 95, txt: 'S', color: 'text-amber-500' }, { min: 85, txt: 'A', color: 'text-emerald-500' },
         { min: 70, txt: 'B', color: 'text-blue-500' }, { min: 50, txt: 'C', color: 'text-purple-500' },
         { min: 30, txt: 'D', color: 'text-yellow-600' }, { min: 0, txt: 'E', color: 'text-rose-500' }
@@ -223,7 +271,7 @@ const submitGuess = () => {
             score,
             distance,
             time: state.currentTime,
-            targetColorCSS: `rgb(${state.targetRgb.join(' ')})`,
+            targetColorCSS: `rgb(${state.targetRgb.join(',')})`,
             guessColorCSS: `rgb(${guessRgb.join(',')})`,
             model: el.modelSelect.options[el.modelSelect.selectedIndex].text,
             modelId: el.modelSelect.value,
@@ -412,7 +460,15 @@ const showSharedResult = data => {
     if (data.mode === 'free') {
         const tCss = `rgb(${data.tRgb.join(',')})`;
         const gCss = `rgb(${data.gRgb.join(',')})`;
-        const evalColors = { S: 'text-amber-500', A: 'text-emerald-500', B: 'text-blue-500', C: 'text-purple-500', D: 'text-yellow-600', E: 'text-rose-500' };
+        const evalColors = {
+            SS: 'bg-clip-text text-transparent bg-gradient-to-r from-red-500 via-amber-500 to-yellow-400 font-extrabold',
+            S: 'text-amber-500',
+            A: 'text-emerald-500',
+            B: 'text-blue-500',
+            C: 'text-purple-500',
+            D: 'text-yellow-600',
+            E: 'text-rose-500'
+        };
         const evalColor = evalColors[data.eval] || 'text-slate-800';
 
         const model = models[data.model];

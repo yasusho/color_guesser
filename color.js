@@ -73,7 +73,7 @@ const buildGradient = (params, idx, steps, min, max, toCss) =>
         return toCss(...p);
     }).join(', ')})`;
 
-const fp = v => Math.round(v * 100) + '%';
+const fp = v => (v * 100).toFixed(1) + '%';
 const fd = v => Math.round(v) + '°';
 const f3 = v => v.toFixed(3);
 const f0 = v => Math.round(v);
@@ -87,25 +87,25 @@ const models = {
     },
     hsv: {
         labels: ['H', 'S', 'V'], descs: ['(Hue)', '(Saturation)', '(Value)'], dots: ['bg-red-400', 'bg-sky-400', 'bg-slate-800'],
-        sliders: [{ min: 0, max: 360, step: 1, format: fd }, { min: 0, max: 1, step: 0.01, format: fp }, { min: 0, max: 1, step: 0.01, format: fp }],
+        sliders: [{ min: 0, max: 360, step: 1, format: fd }, { min: 0, max: 1, step: 0.005, format: fp }, { min: 0, max: 1, step: 0.005, format: fp }],
         hueIndex: 0, fromRgb: rgbToHsv, toRgb: hsvToRgb, toCss: (h,s,v) => `rgb(${hsvToRgb(h,s,v).join(',')})`,
         sliderBg: p => [buildGradient(p, 0, 10, 0, 360, models.hsv.toCss), buildGradient(p, 1, 2, 0, 1, models.hsv.toCss), buildGradient(p, 2, 2, 0, 1, models.hsv.toCss)]
     },
     hsl: {
         labels: ['H', 'S', 'L'], descs: ['(Hue)', '(Saturation)', '(Lightness)'], dots: ['bg-red-400', 'bg-sky-400', 'bg-slate-400'],
-        sliders: [{ min: 0, max: 360, step: 1, format: fd }, { min: 0, max: 1, step: 0.01, format: fp }, { min: 0, max: 1, step: 0.01, format: fp }],
+        sliders: [{ min: 0, max: 360, step: 1, format: fd }, { min: 0, max: 1, step: 0.005, format: fp }, { min: 0, max: 1, step: 0.005, format: fp }],
         hueIndex: 0, fromRgb: rgbToHsl, toRgb: hslToRgb, toCss: (h,s,l) => `hsl(${h}, ${s*100}%, ${l*100}%)`,
         sliderBg: p => [buildGradient(p, 0, 10, 0, 360, models.hsl.toCss), buildGradient(p, 1, 2, 0, 1, models.hsl.toCss), buildGradient(p, 2, 2, 0, 1, models.hsl.toCss)]
     },
     oklab: {
         labels: ['L', 'a', 'b'], descs: ['(Lightness)', '(Green-Red)', '(Blue-Yellow)'], dots: ['bg-slate-400', 'bg-rose-400', 'bg-amber-400'],
-        sliders: [{ min: 0, max: 1, step: 0.01, format: fp }, { min: -0.4, max: 0.4, step: 0.005, format: f3 }, { min: -0.4, max: 0.4, step: 0.005, format: f3 }],
+        sliders: [{ min: 0, max: 1, step: 0.002, format: fp }, { min: -0.4, max: 0.4, step: 0.005, format: f3 }, { min: -0.4, max: 0.4, step: 0.005, format: f3 }],
         hueIndex: -1, fromRgb: rgbToOklab, toRgb: oklabToRgb, toCss: (L,a,b) => `oklab(${L} ${a} ${b})`,
         sliderBg: p => [buildGradient(p, 0, 2, 0, 1, models.oklab.toCss), buildGradient(p, 1, 2, -0.4, 0.4, models.oklab.toCss), buildGradient(p, 2, 2, -0.4, 0.4, models.oklab.toCss)]
     },
     oklch: {
         labels: ['L', 'C', 'H'], descs: ['(Lightness)', '(Chroma)', '(Hue)'], dots: ['bg-slate-400', 'bg-pink-500', 'bg-violet-500'],
-        sliders: [{ min: 0, max: 1, step: 0.01, format: fp }, { min: 0, max: 0.4, step: 0.005, format: f3 }, { min: 0, max: 360, step: 1, format: fd }],
+        sliders: [{ min: 0, max: 1, step: 0.005, format: fp }, { min: 0, max: 0.4, step: 0.002, format: f3 }, { min: 0, max: 360, step: 1, format: fd }],
         hueIndex: 2,
         fromRgb: (r, g, b) => {
             const [L, a, b_] = rgbToOklab(r, g, b);
